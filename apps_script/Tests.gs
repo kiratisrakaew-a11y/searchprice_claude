@@ -20,11 +20,27 @@ function runSheetSetupTests() {
   results.push(_runTest('testOptionalHeaderNotExtra', testOptionalHeaderNotExtra));
   results.push(_runTest('testThaiDescriptionRowDetected', testThaiDescriptionRowDetected));
 
+  // Milestone 2 — utilities & safe data access
+  results.push(_runTest('testNormalizeText', testNormalizeText));
+  results.push(_runTest('testParseNumber', testParseNumber));
+  results.push(_runTest('testNowIsoAndCompact', testNowIsoAndCompact));
+  results.push(_runTest('testSha1Hex', testSha1Hex));
+  results.push(_runTest('testMasterIdDeterministic', testMasterIdDeterministic));
+  results.push(_runTest('testMasterIdSourceIsolation', testMasterIdSourceIsolation));
+  results.push(_runTest('testStagingIdSequence', testStagingIdSequence));
+  results.push(_runTest('testLogAndSearchIdsRandomized', testLogAndSearchIdsRandomized));
+  results.push(_runTest('testMakeOkAndFail', testMakeOkAndFail));
+  results.push(_runTest('testGetColumnIndex', testGetColumnIndex));
+  results.push(_runTest('testRowObjectRoundTrip', testRowObjectRoundTrip));
+  results.push(_runTest('testAppendRowsByHeader', testAppendRowsByHeader));
+  results.push(_runTest('testClearDataRowsAllowList', testClearDataRowsAllowList));
+  results.push(_runTest('testClearRowsByPredicate', testClearRowsByPredicate));
+
   var passed = 0, failed = 0;
   for (var i = 0; i < results.length; i++) {
     if (results[i].ok) passed++; else failed++;
   }
-  Logger.log('=== Milestone 1 Tests: ' + passed + ' passed, ' + failed + ' failed ===');
+  Logger.log('=== Phase 1 Tests (Sheet Setup + Utilities): ' + passed + ' passed, ' + failed + ' failed ===');
   for (var j = 0; j < results.length; j++) {
     Logger.log((results[j].ok ? 'PASS  ' : 'FAIL  ') + results[j].name +
                (results[j].error ? '  -- ' + results[j].error : ''));
@@ -237,4 +253,212 @@ function testThaiDescriptionRowDetected() {
   }
   var wouldFlagData = !anyUnderscore2 && populated2 >= Math.ceil(Math.min(expected.length, dataRow.length) * 0.5);
   _assert(!wouldFlagData, 'normal data row with underscores should NOT be flagged');
+}
+
+// ============================================================
+// Milestone 2 — Utilities & safe data access
+// ============================================================
+
+function testNormalizeText() {
+  _assertEqual(normalizeText_(null), '', 'null → empty');
+  _assertEqual(normalizeText_(undefined), '', 'undefined → empty');
+  _assertEqual(normalizeText_(''), '', 'empty → empty');
+  _assertEqual(normalizeText_('  Hello   World  '), 'hello world', 'trim+collapse+lower');
+  _assertEqual(normalizeText_('ABCdef'), 'abcdef', 'mixed case');
+  _assertEqual(normalizeText_('A\tB\nC  D'), 'a b c d', 'whitespace variants collapse');
+  // Thai content remains intact, just lower-cased ASCII surrounding
+  _assertEqual(normalizeText_('  ทรายหยาบ  รองพื้น  '), 'ทรายหยาบ รองพื้น', 'thai preserved');
+}
+
+function testParseNumber() {
+  _assertEqual(parseNumber_(null), null, 'null → null');
+  _assertEqual(parseNumber_(undefined), null, 'undefined → null');
+  _assertEqual(parseNumber_(''), null, "'' → null");
+  _assertEqual(parseNumber_('abc'), null, 'non-numeric → null');
+  _assertEqual(parseNumber_(0), 0, 'zero');
+  _assertEqual(parseNumber_(-3.5), -3.5, 'negative float');
+  _assertEqual(parseNumber_('1,234.5'), 1234.5, 'comma thousands');
+  _assertEqual(parseNumber_('  42  '), 42, 'whitespace');
+  _assertEqual(parseNumber_(Infinity), null, 'Infinity → null');
+  _assertEqual(parseNumber_(NaN), null, 'NaN → null');
+}
+
+function testNowIsoAndCompact() {
+  var iso = nowIso_();
+  _assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(iso), 'iso shape: ' + iso);
+  var c = nowCompact_();
+  _assert(/^\d{14}$/.test(c), 'compact shape: ' + c);
+}
+
+function testSha1Hex() {
+  // RFC 3174 known test vectors
+  _assertEqual(sha1Hex_('abc'),
+    'a9993e364706816aba3e25717850c26c9cd0d89d', 'sha1("abc")');
+  _assertEqual(sha1Hex_(''),
+    'da39a3ee5e6b4b0d3255bfef95601890afd80709', 'sha1("")');
+}
+
+function testMasterIdDeterministic() {
+  var a = makeMasterId_('laborcost_cgd', 'A001', 'เสาเข็ม ขนาด 4x4', 'ต้น');
+  var b = makeMasterId_('laborcost_cgd', 'A001', 'เสาเข็ม ขนาด 4x4', 'ต้น');
+  _assertEqual(a, b, 'same inputs → same id');
+  _assert(/^M_cgd_[0-9a-f]{8}$/.test(a), 'id format: ' + a);
+  // Whitespace + casing tolerated
+  var c = makeMasterId_('laborcost_cgd', ' A001 ', 'เสาเข็ม ขนาด 4x4', 'ต้น');
+  _assertEqual(a, c, 'leading/trailing space ignored');
+}
+
+function testMasterIdSourceIsolation() {
+  var a = makeMasterId_('laborcost_cgd', 'A001', 'x', 'ต้น');
+  var b = makeMasterId_('laborcost_obec', 'A001', 'x', 'ต้น');
+  _assert(a !== b, 'different source → different id');
+  _assert(a.indexOf('cgd') !== -1, 'cgd prefix');
+  _assert(b.indexOf('obec_l') !== -1, 'obec_l prefix');
+}
+
+function testStagingIdSequence() {
+  var ts = nowCompact_();
+  var s1 = makeStagingId_('laborcost_cgd', ts, 1);
+  var s2 = makeStagingId_('laborcost_cgd', ts, 2);
+  _assert(s1 !== s2, 's1 != s2');
+  _assert(/^S_cgd_\d{14}_\d{6}$/.test(s1), 'staging shape: ' + s1);
+  _assert(s1.indexOf('_000001') !== -1, 'seq padded: ' + s1);
+}
+
+function testLogAndSearchIdsRandomized() {
+  var seenLog = {}, seenSearch = {};
+  for (var i = 0; i < 50; i++) {
+    var l = makeLogId_();
+    var s = makeSearchId_();
+    seenLog[l] = (seenLog[l] || 0) + 1;
+    seenSearch[s] = (seenSearch[s] || 0) + 1;
+  }
+  // Allow occasional collision tolerance but require near-unique
+  var dupL = 0, dupS = 0;
+  for (var k in seenLog) if (seenLog[k] > 1) dupL++;
+  for (var k2 in seenSearch) if (seenSearch[k2] > 1) dupS++;
+  _assert(dupL <= 2, 'log id duplicates: ' + dupL);
+  _assert(dupS <= 2, 'search id duplicates: ' + dupS);
+}
+
+function testMakeOkAndFail() {
+  var ok = makeOk_({ x: 1 });
+  _assertEqual(ok.ok, true, 'ok.ok');
+  _assertEqual(ok.error, null, 'ok.error null');
+  _assertEqual(ok.data.x, 1, 'ok.data passthrough');
+
+  var f1 = makeFail_('something broke');
+  _assertEqual(f1.ok, false, 'f1.ok false');
+  _assertEqual(f1.error.message, 'something broke', 'f1 message');
+  _assertEqual(f1.error.code, 'FAIL', 'f1 default code');
+
+  var customErr = makeError_('E_HEADER', 'bad header', { sheet: 'X' });
+  var f2 = makeFail_(customErr);
+  _assertEqual(f2.error.code, 'E_HEADER', 'f2 preserves code');
+  _assertEqual(f2.error.context.sheet, 'X', 'f2 preserves context');
+
+  var f3 = makeFail_(new Error('boom'));
+  _assertEqual(f3.error.code, 'EXCEPTION', 'Error → EXCEPTION');
+  _assertEqual(f3.error.message, 'boom', 'Error message');
+}
+
+function testGetColumnIndex() {
+  ensureAllSheets();
+  var master = getSheet_(SHEET.MASTER);
+  _assertEqual(getColumnIndex_(master, 'master_id'), 1, 'first col');
+  _assertEqual(getColumnIndex_(master, 'last_refresh_at'), HEADERS.MASTER.length, 'last col');
+  _assertEqual(getColumnIndex_(master, 'no_such_column'), 0, 'missing → 0');
+}
+
+function testRowObjectRoundTrip() {
+  var headers = HEADERS.MASTER;
+  var obj = {
+    master_id: 'M_test_abc12345',
+    source_name: 'laborcost_cgd',
+    unit: 'ต้น',
+    price: 95
+  };
+  var row = objectToRow_(obj, headers);
+  _assertEqual(row.length, headers.length, 'row length');
+  _assertEqual(row[0], 'M_test_abc12345', 'master_id');
+  // Missing fields become ''
+  for (var i = 0; i < row.length; i++) {
+    var name = headers[i];
+    if (obj[name] === undefined) _assertEqual(row[i], '', 'missing ' + name + ' → blank');
+  }
+  var back = rowToObject_(row, headers);
+  _assertEqual(back.master_id, 'M_test_abc12345', 'roundtrip master_id');
+  _assertEqual(back.unit, 'ต้น', 'roundtrip unit');
+  _assertEqual(back.price, 95, 'roundtrip price');
+}
+
+function testAppendRowsByHeader() {
+  ensureAllSheets();
+  // Use SEARCH_LOG — safe to mutate and easy to clean up afterward
+  var sheet = getSheet_(SHEET.SEARCH_LOG);
+  var beforeRows = sheet.getLastRow();
+  var rows = [
+    { search_id: 'TEST_SR_1', searched_at: nowIso_(), user_query: 'q1', result_count: 0, no_result_flag: 'yes' },
+    { search_id: 'TEST_SR_2', searched_at: nowIso_(), user_query: 'q2', result_count: 3 }
+  ];
+  var n = appendRowsByHeader_(sheet, rows);
+  _assertEqual(n, 2, 'append count');
+  var afterRows = sheet.getLastRow();
+  _assertEqual(afterRows, beforeRows + 2, 'row count delta');
+  // Clean up appended rows
+  clearRowsByPredicate_(sheet, function (r) {
+    return String(r.search_id || '').indexOf('TEST_SR_') === 0;
+  });
+}
+
+function testClearDataRowsAllowList() {
+  ensureAllSheets();
+  // Allowed sheets pass without throwing
+  var allowed = [SHEET.STAGING, SHEET.MASTER, SHEET.REFRESH_LOG, SHEET.SEARCH_LOG];
+  for (var i = 0; i < allowed.length; i++) {
+    var s = getSheet_(allowed[i]);
+    if (!s) continue;
+    clearDataRows_(s); // ok on empty sheet
+  }
+  // Raw sheets must throw
+  var threw = false;
+  try { clearDataRows_(getSheet_(SHEET.RAW_CGD)); }
+  catch (e) { threw = true; }
+  _assert(threw, 'clearing raw sheet must throw');
+  // ALIAS_DICTIONARY also blocked
+  var threw2 = false;
+  try { clearDataRows_(getSheet_(SHEET.ALIAS)); }
+  catch (e) { threw2 = true; }
+  _assert(threw2, 'clearing ALIAS_DICTIONARY must throw');
+}
+
+function testClearRowsByPredicate() {
+  ensureAllSheets();
+  var sheet = getSheet_(SHEET.SEARCH_LOG);
+  // Seed with deterministic test rows
+  appendRowsByHeader_(sheet, [
+    { search_id: 'PRED_KEEP_1', user_query: 'keep1' },
+    { search_id: 'PRED_DROP_1', user_query: 'drop1' },
+    { search_id: 'PRED_KEEP_2', user_query: 'keep2' },
+    { search_id: 'PRED_DROP_2', user_query: 'drop2' }
+  ]);
+  var result = clearRowsByPredicate_(sheet, function (r) {
+    return String(r.search_id || '').indexOf('PRED_DROP_') === 0;
+  });
+  _assertEqual(result.removed, 2, 'removed=2');
+  // The kept count is sheet-wide (includes other pre-existing rows), so check
+  // only that our PRED_KEEP_ rows survive and PRED_DROP_ rows are gone.
+  var all = readAllAsObjects_(sheet);
+  var kept = 0, leakedDrop = 0;
+  for (var i = 0; i < all.length; i++) {
+    var id = String(all[i].search_id || '');
+    if (id.indexOf('PRED_KEEP_') === 0) kept++;
+    if (id.indexOf('PRED_DROP_') === 0) leakedDrop++;
+  }
+  _assertEqual(kept, 2, 'keep rows survived');
+  _assertEqual(leakedDrop, 0, 'drop rows removed');
+  // Clean up
+  clearRowsByPredicate_(sheet, function (r) {
+    return String(r.search_id || '').indexOf('PRED_KEEP_') === 0;
+  });
 }

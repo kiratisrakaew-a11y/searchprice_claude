@@ -70,3 +70,22 @@ var TPSO = Object.freeze({
   expectedFirstDataRow: 5,
   responseHeaderProbeMaxRow: 10
 });
+
+/**
+ * Sheets the script may clear data rows on (row 2+).
+ * Raw source sheets and ALIAS_DICTIONARY are intentionally NOT clearable.
+ */
+var CLEARABLE_SHEETS = Object.freeze([
+  SHEET.STAGING,
+  SHEET.MASTER,
+  SHEET.REFRESH_LOG,
+  SHEET.SEARCH_LOG
+]);
+
+/** Short abbreviations for source names, used in deterministic IDs. */
+var SOURCE_ABBR = Object.freeze({
+  laborcost_cgd:     'cgd',
+  laborcost_obec:    'obec_l',
+  materialcost_obec: 'obec_m',
+  materialcost_tpso: 'tpso'
+});
