@@ -35,7 +35,7 @@ Scope: Phase 1 BOQ Price Search (Google Sheets + Apps Script WebApp)
 | MASTER_PRICE_DATABASE | 26 |
 | STAGING_NORMALIZED | 29 |
 | ALIAS_DICTIONARY | 10 |
-| REFRESH_LOG | 17 |
+| REFRESH_LOG | 18 (see §7.6) |
 | SEARCH_LOG | 12 |
 
 ---
@@ -139,6 +139,11 @@ Scope: Phase 1 BOQ Price Search (Google Sheets + Apps Script WebApp)
 
 ### 7.5 📝 ไม่มี Apps Script code
 - repo มีเฉพาะ doc + workbook — เริ่มจาก 0 ใน Milestone 1
+
+### 7.6 ⚠️ REFRESH_LOG column count (พบใน Milestone 1)
+- `/docs/03_DATA_SCHEMA.md` หัวข้อ REFRESH_LOG ระบุ "Columns must be exactly:" แล้วลิสต์ 1–**18** (`log_id` ... `triggered_by`)
+- รายงาน Milestone 0 ต้นฉบับเขียน "17 cols" — **ผิด** จากการสรุปย่อ ไม่ใช่จากการนับ list authoritative
+- **แก้แล้ว**: ตาราง §2 ใช้ค่า 18 และ `apps_script/Schema.gs HEADERS.REFRESH_LOG` มี 18 entries ตรง list
 
 ---
 
