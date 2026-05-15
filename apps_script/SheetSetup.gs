@@ -79,12 +79,17 @@ function validateAllSheets() {
         var rawCheck = validateHeaderExact_(actualRaw, expectedRaw, optRaw);
         entry.header_check = rawCheck;
         if (!rawCheck.ok) {
-          // Missing optional column is not a failure
+          // Filter optional from both missing and extra before failing
           var hardMissing = [];
           for (var m = 0; m < rawCheck.missing.length; m++) {
             if (optRaw.indexOf(rawCheck.missing[m]) === -1) hardMissing.push(rawCheck.missing[m]);
           }
-          if (hardMissing.length > 0 || rawCheck.outOfOrder.length > 0 || rawCheck.extra.length > 0) {
+          // validateHeaderExact_ already excludes optional from extra, but guard here too
+          var hardExtra = [];
+          for (var mx = 0; mx < rawCheck.extra.length; mx++) {
+            if (optRaw.indexOf(rawCheck.extra[mx]) === -1) hardExtra.push(rawCheck.extra[mx]);
+          }
+          if (hardMissing.length > 0 || rawCheck.outOfOrder.length > 0 || hardExtra.length > 0) {
             entry.issues.push('raw_header_mismatch');
             report.overall_ok = false;
           }
@@ -105,11 +110,11 @@ function validateAllSheets() {
         entry.issues.push('header_mismatch');
         report.overall_ok = false;
       }
-      if (headerHasMergedCells_(sheet)) {
-        entry.issues.push('merged_cells_in_header');
+      if (sheetHasMergedCells_(sheet)) {
+        entry.issues.push('merged_cells_in_sheet');
         report.overall_ok = false;
       }
-      if (hasDescriptionRowAt2_(sheet)) {
+      if (hasDescriptionRowAt2_(sheet, expected)) {
         entry.issues.push('description_row_at_row_2');
         report.overall_ok = false;
       }

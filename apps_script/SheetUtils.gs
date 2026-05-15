@@ -68,9 +68,13 @@ function validateHeaderExact_(actual, expected, optional) {
     }
   }
 
-  // Extra (actual not in expected)
+  // Build optional set so optional columns are excluded from both missing AND extra
+  var optionalSet = {};
+  for (var i2 = 0; i2 < optional.length; i2++) optionalSet[optional[i2]] = true;
+
+  // Extra (actual not in expected AND not optional/ignored)
   for (var k = 0; k < actual.length; k++) {
-    if (expectedSet[actual[k]] === undefined) extra.push(actual[k]);
+    if (expectedSet[actual[k]] === undefined && !optionalSet[actual[k]]) extra.push(actual[k]);
   }
 
   // Out of order — only check among present-and-expected
@@ -97,40 +101,67 @@ function validateHeaderExact_(actual, expected, optional) {
 }
 
 /**
- * Check if any merged cells exist within the header range (row 1, cols 1..n).
+ * Check if any merged cells exist anywhere in the sheet's used range.
+ * /docs/03_DATA_SCHEMA.md rule: "No merged cells" applies to the whole sheet.
  * @return {boolean} true if a merge was found.
  */
-function headerHasMergedCells_(sheet) {
+function sheetHasMergedCells_(sheet) {
   if (!sheet) return false;
-  var lastCol = Math.max(1, sheet.getLastColumn());
-  var ranges = sheet.getRange(1, 1, 1, lastCol).getMergedRanges();
+  if (sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) return false;
+  var ranges = sheet.getDataRange().getMergedRanges();
   return ranges && ranges.length > 0;
 }
 
 /**
- * Heuristic: detect a "field description row" — row 2 echoing or describing
- * the header. We flag if row 2 equals row 1 verbatim, or if row 2 contains
- * the exact word "description" / "คำอธิบาย" in any cell.
+ * Detect a "field description row" at row 2.
+ * Three heuristics (any one triggers):
+ *   1. Row 2 is an exact echo of row 1.
+ *   2. Any cell in row 2 contains "description" or "คำอธิบาย".
+ *   3. Schema-aware: when expectedHeaders given, row 2 looks like Thai label text —
+ *      ≥50% of schema columns are populated, all populated cells are strings,
+ *      and none contain an underscore (our schema headers always use underscores).
+ *
+ * @param {Sheet} sheet
+ * @param {string[]} [expectedHeaders]  Schema header list for heuristic 3.
+ * @return {boolean}
  */
-function hasDescriptionRowAt2_(sheet) {
+function hasDescriptionRowAt2_(sheet, expectedHeaders) {
   if (!sheet) return false;
   if (sheet.getLastRow() < 2) return false;
   var lastCol = Math.max(1, sheet.getLastColumn());
   var row1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var row2 = sheet.getRange(2, 1, 1, lastCol).getValues()[0];
 
-  // Exact echo
+  // Heuristic 1: exact echo
   var echo = true;
   for (var i = 0; i < lastCol; i++) {
     if (String(row1[i]).trim() !== String(row2[i]).trim()) { echo = false; break; }
   }
   if (echo) return true;
 
-  // Description keyword
+  // Heuristic 2: description keyword
   for (var j = 0; j < lastCol; j++) {
     var v = String(row2[j] || '').toLowerCase();
     if (v.indexOf('description') !== -1 || v.indexOf('คำอธิบาย') !== -1) return true;
   }
+
+  // Heuristic 3: schema-aware Thai label detection
+  if (expectedHeaders && expectedHeaders.length > 0) {
+    var checkCols = Math.min(expectedHeaders.length, lastCol);
+    var populated = 0;
+    var allStrings = true;
+    var anyUnderscore = false;
+    for (var k = 0; k < checkCols; k++) {
+      var cell = row2[k];
+      var s = String(cell === null || cell === undefined ? '' : cell).trim();
+      if (s === '') continue;
+      populated++;
+      if (typeof cell === 'number' || cell instanceof Date) { allStrings = false; break; }
+      if (s.indexOf('_') !== -1) { anyUnderscore = true; break; }
+    }
+    if (allStrings && !anyUnderscore && populated >= Math.ceil(checkCols * 0.5)) return true;
+  }
+
   return false;
 }
 

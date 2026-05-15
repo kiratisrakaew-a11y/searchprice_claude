@@ -140,6 +140,11 @@ Scope: Phase 1 BOQ Price Search (Google Sheets + Apps Script WebApp)
 ### 7.5 📝 ไม่มี Apps Script code
 - repo มีเฉพาะ doc + workbook — เริ่มจาก 0 ใน Milestone 1
 
+### 7.7 ⚠️ CLAUDE.md / docs vs workbook: CHECKLIST_2_SCHEMA และ MASTER_PRICE_DATABASE ไม่มีใน .xlsx (พบใน Milestone 1 QA)
+- CLAUDE.md ระบุ workbook "facts" ว่ามี `CHECKLIST_2_SCHEMA` และ `MASTER_PRICE_DATABASE` แต่ workbook จริงมีแค่ 4 raw sheets
+- **Resolution**: ไม่ใช่ bug ใน code — CLAUDE.md เองบอกว่า "Missing control sheets should be created by the script" และ `ensureAllSheets()` ทำได้ถูกต้อง
+- **ผลกระทบ**: ไม่ block การพัฒนา บันทึกเพื่อความโปร่งใส
+
 ### 7.6 ⚠️ REFRESH_LOG column count (พบใน Milestone 1)
 - `/docs/03_DATA_SCHEMA.md` หัวข้อ REFRESH_LOG ระบุ "Columns must be exactly:" แล้วลิสต์ 1–**18** (`log_id` ... `triggered_by`)
 - รายงาน Milestone 0 ต้นฉบับเขียน "17 cols" — **ผิด** จากการสรุปย่อ ไม่ใช่จากการนับ list authoritative
