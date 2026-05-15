@@ -9,7 +9,7 @@ function onOpen() {
     .addItem('Run Milestone 1 Check (Ensure + Validate)', 'runMilestone1Check')
     .addItem('Validate Sheets Only (read-only)', 'menu_validateAllSheets_')
     .addSeparator()
-    .addItem('Run Sheet Setup Tests', 'runSheetSetupTests')
+    .addItem('Run All Tests (Sheet Setup + Utilities)', 'runSheetSetupTests')
     .addToUi();
 }
 

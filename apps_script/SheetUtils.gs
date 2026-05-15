@@ -165,6 +165,133 @@ function hasDescriptionRowAt2_(sheet, expectedHeaders) {
   return false;
 }
 
+// ---------- Header lookup & row<->object conversion ----------
+
+/**
+ * 1-based column index for `headerName`, or 0 if not present.
+ */
+function getColumnIndex_(sheet, headerName) {
+  if (!sheet) return 0;
+  var headers = readHeader_(sheet);
+  var i = headers.indexOf(headerName);
+  return i === -1 ? 0 : i + 1;
+}
+
+/** Build an object keyed by header name from a row array. */
+function rowToObject_(row, headers) {
+  var obj = {};
+  for (var i = 0; i < headers.length; i++) {
+    obj[headers[i]] = (row && i < row.length) ? row[i] : '';
+  }
+  return obj;
+}
+
+/** Build a row array in header order; missing fields become ''. */
+function objectToRow_(obj, headers) {
+  var row = [];
+  for (var i = 0; i < headers.length; i++) {
+    var v = obj ? obj[headers[i]] : undefined;
+    row.push(v === undefined || v === null ? '' : v);
+  }
+  return row;
+}
+
+// ---------- Safe readers ----------
+
+/** Read every data row (row 2..lastRow) as objects keyed by header. */
+function readAllAsObjects_(sheet) {
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var headers = readHeader_(sheet);
+  if (headers.length === 0) return [];
+  var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) out.push(rowToObject_(values[i], headers));
+  return out;
+}
+
+/** Read a specific block; startRow is 1-based and must be >= 2. */
+function readRangeAsObjects_(sheet, startRow, numRows) {
+  if (!sheet || numRows <= 0) return [];
+  if (startRow < 2) startRow = 2;
+  var lastRow = sheet.getLastRow();
+  if (startRow > lastRow) return [];
+  var rows = Math.min(numRows, lastRow - startRow + 1);
+  var headers = readHeader_(sheet);
+  if (headers.length === 0) return [];
+  var values = sheet.getRange(startRow, 1, rows, headers.length).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) out.push(rowToObject_(values[i], headers));
+  return out;
+}
+
+// ---------- Safe writers ----------
+
+/**
+ * Append objects to a sheet, mapping each field by header name.
+ * Never overwrites existing rows. Returns the number of rows appended.
+ */
+function appendRowsByHeader_(sheet, objects) {
+  if (!sheet) throw new Error('appendRowsByHeader_: sheet is null');
+  if (!objects || objects.length === 0) return 0;
+  var headers = readHeader_(sheet);
+  if (headers.length === 0) throw new Error('appendRowsByHeader_: sheet has no header: ' + sheet.getName());
+  var matrix = [];
+  for (var i = 0; i < objects.length; i++) matrix.push(objectToRow_(objects[i], headers));
+  var startRow = Math.max(sheet.getLastRow() + 1, 2);
+  sheet.getRange(startRow, 1, matrix.length, headers.length).setValues(matrix);
+  return matrix.length;
+}
+
+// ---------- Safe clear ----------
+
+function _assertClearable_(sheet) {
+  if (!sheet) throw new Error('clear: sheet is null');
+  var name = sheet.getName();
+  if (CLEARABLE_SHEETS.indexOf(name) === -1) {
+    throw new Error('clear blocked: sheet "' + name + '" is not in CLEARABLE_SHEETS');
+  }
+}
+
+/**
+ * Clear all data rows (row 2..lastRow); header row stays intact.
+ * Allow-list guarded — refuses raw sheets and ALIAS_DICTIONARY.
+ * @return {number} rows cleared.
+ */
+function clearDataRows_(sheet) {
+  _assertClearable_(sheet);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return 0;
+  sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  return lastRow - 1;
+}
+
+/**
+ * Clear rows where predicate(rowObj) returns true; keep the rest.
+ * Strategy: read → filter → clear all → rewrite kept rows.
+ * @return {{removed:number, kept:number}}
+ */
+function clearRowsByPredicate_(sheet, predicateFn) {
+  _assertClearable_(sheet);
+  if (typeof predicateFn !== 'function') throw new Error('clearRowsByPredicate_: predicateFn required');
+  var headers = readHeader_(sheet);
+  if (headers.length === 0) return { removed: 0, kept: 0 };
+  var all = readAllAsObjects_(sheet);
+  if (all.length === 0) return { removed: 0, kept: 0 };
+  var keep = [];
+  var removed = 0;
+  for (var i = 0; i < all.length; i++) {
+    if (predicateFn(all[i])) removed++;
+    else keep.push(all[i]);
+  }
+  if (removed === 0) return { removed: 0, kept: keep.length };
+  clearDataRows_(sheet);
+  if (keep.length > 0) appendRowsByHeader_(sheet, keep);
+  return { removed: removed, kept: keep.length };
+}
+
 /**
  * Scan the first `maxRow` rows for the TPSO real response header.
  * Returns the 1-based row index of the first row containing all
