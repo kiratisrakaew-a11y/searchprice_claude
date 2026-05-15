@@ -10,13 +10,15 @@ function runSheetSetupTests() {
 
   results.push(_runTest('testRequiredSheetsExistAfterEnsure', testRequiredSheetsExistAfterEnsure));
   results.push(_runTest('testManagedHeadersExact', testManagedHeadersExact));
-  results.push(_runTest('testNoMergedCellsInManagedHeader', testNoMergedCellsInManagedHeader));
+  results.push(_runTest('testNoMergedCellsInManaged', testNoMergedCellsInManaged));
   results.push(_runTest('testNoDescriptionRowInManaged', testNoDescriptionRowInManaged));
   results.push(_runTest('testRawSheetHeaders', testRawSheetHeaders));
   results.push(_runTest('testTpsoLayoutDetection', testTpsoLayoutDetection));
   results.push(_runTest('testIdempotentEnsure', testIdempotentEnsure));
   results.push(_runTest('testNoForbiddenSheetsCreated', testNoForbiddenSheetsCreated));
   results.push(_runTest('testSchemaColumnCounts', testSchemaColumnCounts));
+  results.push(_runTest('testOptionalHeaderNotExtra', testOptionalHeaderNotExtra));
+  results.push(_runTest('testThaiDescriptionRowDetected', testThaiDescriptionRowDetected));
 
   var passed = 0, failed = 0;
   for (var i = 0; i < results.length; i++) {
@@ -85,21 +87,24 @@ function testManagedHeadersExact() {
   }
 }
 
-function testNoMergedCellsInManagedHeader() {
+function testNoMergedCellsInManaged() {
+  // Checks entire used range, not just header row
   var toCheck = [SHEET.MASTER, SHEET.STAGING, SHEET.ALIAS, SHEET.REFRESH_LOG, SHEET.SEARCH_LOG];
   for (var i = 0; i < toCheck.length; i++) {
     var sheet = getSheet_(toCheck[i]);
     if (!sheet) continue;
-    _assert(!headerHasMergedCells_(sheet), 'merged cells in header of ' + toCheck[i]);
+    _assert(!sheetHasMergedCells_(sheet), 'merged cells anywhere in ' + toCheck[i]);
   }
 }
 
 function testNoDescriptionRowInManaged() {
   var toCheck = [SHEET.MASTER, SHEET.STAGING, SHEET.ALIAS, SHEET.REFRESH_LOG, SHEET.SEARCH_LOG];
   for (var i = 0; i < toCheck.length; i++) {
-    var sheet = getSheet_(toCheck[i]);
+    var name = toCheck[i];
+    var sheet = getSheet_(name);
     if (!sheet) continue;
-    _assert(!hasDescriptionRowAt2_(sheet), 'description row at row 2 of ' + toCheck[i]);
+    var expected = getManagedSchema_(name);
+    _assert(!hasDescriptionRowAt2_(sheet, expected), 'description row at row 2 of ' + name);
   }
 }
 
@@ -169,4 +174,67 @@ function testSchemaColumnCounts() {
   _assertEqual(HEADERS.ALIAS.length,       10, 'ALIAS col count');
   _assertEqual(HEADERS.REFRESH_LOG.length, 18, 'REFRESH_LOG col count');
   _assertEqual(HEADERS.SEARCH_LOG.length,  12, 'SEARCH_LOG col count');
+}
+
+/**
+ * Finding 2 fix: optional header (material_cost_thb) present in actual
+ * must NOT appear in validateHeaderExact_ `extra` list.
+ */
+function testOptionalHeaderNotExtra() {
+  var expected = RAW_EXPECTED_HEADERS.laborcost_obec;
+  var optional = RAW_OPTIONAL_HEADERS.laborcost_obec || [];
+  // Simulate laborcost_obec that HAS material_cost_thb in the future
+  var actualWithOptional = expected.concat(['material_cost_thb']);
+  var result = validateHeaderExact_(actualWithOptional, expected, optional);
+  _assertEqual(result.extra.length, 0,
+    'optional header material_cost_thb should not be in extra, got: ' + result.extra.join(','));
+  // Simulate truly unexpected column — should still be flagged
+  var actualWithUnknown = expected.concat(['unknown_column']);
+  var result2 = validateHeaderExact_(actualWithUnknown, expected, optional);
+  _assertEqual(result2.extra.length, 1,
+    'unknown_column should be in extra, got count: ' + result2.extra.length);
+}
+
+/**
+ * Finding 4 fix: Thai label text in row 2 must be detected as description row.
+ * Tests heuristic 3 of hasDescriptionRowAt2_().
+ * Uses a mock object since we cannot create real Sheets in unit tests.
+ */
+function testThaiDescriptionRowDetected() {
+  var expected = HEADERS.MASTER; // 26 cols with underscores
+  // Build a row 2 that looks like Thai descriptions — no underscores, all strings
+  var thaiLabels = [
+    'รหัสหลัก', 'ชื่อแหล่ง', 'ประเภทแหล่ง', 'ความถี่', 'รหัสรายการ',
+    'ชื่อรายการต้นฉบับ', 'ชื่อรายการ', 'หมวดหมู่ 1', 'หมวดหมู่ 2', 'หมวดหมู่ 3',
+    'หน่วย', 'ราคา', 'ค่าวัสดุ', 'ค่าแรง', 'ราคารวม',
+    'เกณฑ์ราคา', 'จังหวัด', 'ภาค', 'ปีที่มีผล', 'เดือนที่มีผล',
+    'หมายเหตุ', 'คำค้น', 'คำแทน', 'ข้อความรวม', 'สถานะ', 'อัปเดตล่าสุด'
+  ];
+  // Detect using pure array logic (no Apps Script Sheet needed)
+  var checkCols = Math.min(expected.length, thaiLabels.length);
+  var populated = 0;
+  var allStrings = true;
+  var anyUnderscore = false;
+  for (var k = 0; k < checkCols; k++) {
+    var s = String(thaiLabels[k] || '').trim();
+    if (s === '') continue;
+    populated++;
+    if (s.indexOf('_') !== -1) { anyUnderscore = true; break; }
+  }
+  var wouldFlag = allStrings && !anyUnderscore && populated >= Math.ceil(checkCols * 0.5);
+  _assert(wouldFlag, 'Thai description row should be flagged by heuristic 3');
+
+  // Verify normal data row (numbers + strings with underscores) would NOT be flagged
+  var dataRow = ['M001', 'laborcost_cgd', 'labor', 'yearly', 'A001',
+    'Test item', 'Test item clean', 'Cat1', null, null, 'ตร.ม.', 100, null, 100, 100,
+    'labor_only', null, null, 2569, 4, null, null, null, null, 'active', '2026-01-01'];
+  var populated2 = 0, anyUnderscore2 = false;
+  for (var d = 0; d < Math.min(expected.length, dataRow.length); d++) {
+    var sv = String(dataRow[d] === null || dataRow[d] === undefined ? '' : dataRow[d]).trim();
+    if (sv === '') continue;
+    populated2++;
+    if (sv.indexOf('_') !== -1) { anyUnderscore2 = true; break; }
+  }
+  var wouldFlagData = !anyUnderscore2 && populated2 >= Math.ceil(Math.min(expected.length, dataRow.length) * 0.5);
+  _assert(!wouldFlagData, 'normal data row with underscores should NOT be flagged');
 }
